@@ -80,7 +80,7 @@ export default function Dashboard() {
   };
 
   const handleNewNote = () => {
-    // TODO: navigate('/editor');
+    navigate('/editor');
     console.log('Creating new note');
   };
 
