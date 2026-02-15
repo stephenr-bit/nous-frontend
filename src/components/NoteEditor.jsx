@@ -1,27 +1,141 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Trash2, FileText, Save, Check } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Plus, Trash2, FileText, Save, Check, Home } from 'lucide-react';
+import { api } from '../services/api';
 
 export default function NoteEditor() {
-  const [notes, setNotes] = useState([
-    { id: 1, title: 'My First Note', content: '', timestamp: new Date() }
-  ]);
-  const [activeNote, setActiveNote] = useState(1);
+    const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+  const [notes, setNotes] = useState([]);
+  const [activeNote, setActiveNote] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState('saved'); // 'saved', 'unsaved', 'saving', 'error'
+  const [saveStatus, setSaveStatus] = useState('saved');
+  const [isLoading, setIsLoading] = useState(true);
   const textareaRef = useRef(null);
   const saveTimeoutRef = useRef(null);
 
   const currentNote = notes.find(n => n.id === activeNote);
 
+  // Load notes on mount
+  useEffect(() => {
+    loadNotes();
+  }, []);
+
+   const loadNotes = async () => {
+  console.log('=== loadNotes called ===');
+  try {
+    setIsLoading(true);
+    
+    // Check if there's a specific note to open from URL
+    const noteIdFromUrl = searchParams.get('note');
+    console.log('Note ID from URL:', noteIdFromUrl);
+    
+    if (noteIdFromUrl) {
+      // Load the specific note with full content
+      const noteData = await api.getNote(noteIdFromUrl);
+      console.log('✅ Loaded specific note:', noteData);
+      
+      const transformedNote = {
+        id: noteData.id,
+        title: noteData.title,
+        content: noteData.content,
+        timestamp: new Date(noteData.updated_at || noteData.created_at)
+      };
+      
+      setNotes([transformedNote]);
+      setActiveNote(transformedNote.id);
+    } else {
+      // Load all notes (for the sidebar list)
+      const data = await api.getNotes();
+      console.log('✅ Loaded notes list:', data);
+      
+      if (data && data.length > 0) {
+        // For the list, we can use previews, but we need to fetch full content for the first note
+        const firstNote = await api.getNote(data[0].id);
+        
+        const transformedNotes = [{
+          id: firstNote.id,
+          title: firstNote.title,
+          content: firstNote.content,
+          timestamp: new Date(firstNote.updated_at || firstNote.created_at)
+        }];
+        
+        setNotes(transformedNotes);
+        setActiveNote(firstNote.id);
+      } else {
+        // Create a default note if none exist
+        const tempNote = {
+          id: 'temp-' + Date.now(),
+          title: 'My First Note',
+          content: '',
+          timestamp: new Date()
+        };
+        setNotes([tempNote]);
+        setActiveNote(tempNote.id);
+      }
+    }
+  } catch (error) {
+    console.error('Error loading notes:', error);
+    // Fallback to local note
+    const defaultNote = {
+      id: 'temp-' + Date.now(),
+      title: 'My First Note',
+      content: '',
+      timestamp: new Date()
+    };
+    setNotes([defaultNote]);
+    setActiveNote(defaultNote.id);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+  const saveNote = async () => {
+    if (!currentNote) return;
+    
+    setIsSaving(true);
+    setSaveStatus('saving');
+
+    try {
+      // Check if it's a temporary note (not yet saved to backend)
+      if (typeof currentNote.id === 'string' && currentNote.id.startsWith('temp-')) {
+        // Create new note
+        const response = await api.createNote({
+          title: currentNote.title,
+          content: currentNote.content
+        });
+        
+        // Update local state with real ID
+        setNotes(notes.map(n => 
+          n.id === currentNote.id 
+            ? { ...n, id: response.id, timestamp: new Date(response.created_at) }
+            : n
+        ));
+        setActiveNote(response.id);
+      } else {
+        // Update existing note
+        await api.updateNote(currentNote.id, {
+          title: currentNote.title,
+          content: currentNote.content
+        });
+      }
+      
+      setSaveStatus('saved');
+    } catch (error) {
+      console.error('Error saving notes:', error);
+      setSaveStatus('error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // Auto-save functionality
   useEffect(() => {
-    if (saveStatus === 'unsaved') {
-      // Clear existing timeout
+    if (saveStatus === 'unsaved' && currentNote) {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
       
-      // Set new timeout to save after 2 seconds of inactivity
       saveTimeoutRef.current = setTimeout(() => {
         saveNote();
       }, 2000);
@@ -34,64 +148,40 @@ export default function NoteEditor() {
     };
   }, [notes, saveStatus]);
 
-  const saveNote = async () => {
-    setIsSaving(true);
-    setSaveStatus('saving');
-
-    try {
-      const response = await fetch('/api/notes/save', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          notes: notes
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Save failed');
-      }
-
-      const data = await response.json();
-      setSaveStatus('saved');
-    } catch (error) {
-      console.error('Error saving notes:', error);
-      setSaveStatus('error');
-    } finally {
-      setIsSaving(false);
-    }
+  const addNote = async () => {
+  const tempNote = {
+    id: 'temp-' + Date.now(),
+    title: `Note ${notes.length + 1}`,
+    content: '', // Empty content is fine for local temp notes
+    timestamp: new Date()
   };
-
-  const addNote = () => {
-    const newNote = {
-      id: Date.now(),
-      title: `Note ${notes.length + 1}`,
-      content: '',
-      timestamp: new Date()
-    };
-    setNotes([...notes, newNote]);
-    setActiveNote(newNote.id);
-    setSaveStatus('unsaved');
-  };
+  setNotes([...notes, tempNote]);
+  setActiveNote(tempNote.id);
+  setSaveStatus('unsaved');
+  // Don't try to save empty notes to the backend!
+};
 
   const deleteNote = async (id) => {
     if (notes.length === 1) return;
-    const filtered = notes.filter(n => n.id !== id);
-    setNotes(filtered);
-    if (activeNote === id) {
-      setActiveNote(filtered[0].id);
-    }
-    setSaveStatus('unsaved');
     
-    // Also send delete request to backend
     try {
-      await fetch(`/api/notes/${id}`, {
-        method: 'DELETE'
-      });
+      // Only delete from backend if it's not a temp note
+      if (typeof id === 'string' && !id.startsWith('temp-')) {
+        await api.deleteNote(id);
+      }
+      
+      const filtered = notes.filter(n => n.id !== id);
+      setNotes(filtered);
+      if (activeNote === id) {
+        setActiveNote(filtered[0].id);
+      }
     } catch (error) {
       console.error('Error deleting note:', error);
     }
+  };
+
+  const handleHomeClick = () => {
+    navigate('/');
   };
 
   const updateNote = (content) => {
@@ -112,29 +202,6 @@ export default function NoteEditor() {
     setSaveStatus('unsaved');
   };
 
-  // Load notes on mount
-  useEffect(() => {
-    const loadNotes = async () => {
-      try {
-        const response = await fetch('/api/notes');
-        if (response.ok) {
-          const data = await response.json();
-          if (data.notes && data.notes.length > 0) {
-            setNotes(data.notes.map(note => ({
-              ...note,
-              timestamp: new Date(note.timestamp)
-            })));
-            setActiveNote(data.notes[0].id);
-          }
-        }
-      } catch (error) {
-        console.error('Error loading notes:', error);
-      }
-    };
-
-    loadNotes();
-  }, []);
-
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -142,13 +209,25 @@ export default function NoteEditor() {
     }
   }, [currentNote?.content]);
 
+  if (isLoading) {
+    return (
+      <div className="flex h-screen bg-gradient-to-br from-stone-900 via-stone-800 to-neutral-900 items-center justify-center">
+        <div className="text-amber-400">Loading notes...</div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen bg-gradient-to-br from-stone-900 via-stone-800 to-neutral-900">
       {/* Sidebar */}
       <div className="w-72 bg-black/40 backdrop-blur-sm border-r border-stone-700/50 flex flex-col">
         <div className="p-6 border-b border-stone-700/50">
           <h1 className="text-2xl font-semibold text-amber-100 mb-1">Notes</h1>
-          <p className="text-sm text-stone-400">Your personal notebook</p>
+          <div className="flex items-center gap-2 text-amber-400 cursor-pointer hover:text-amber-300 transition-colors" onClick={handleHomeClick}>
+            <Home className="w-4 h-4" />
+            Home
+          </div>
+          <p className="text-sm text-stone-400 mt-2">Your personal notebook</p>
         </div>
         
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
@@ -255,7 +334,6 @@ export default function NoteEditor() {
 
         {/* College Ruled Paper Background */}
         <div className="flex-1 overflow-y-auto relative">
-          {/* Notebook Lines Background */}
           <div 
             className="absolute inset-0 pointer-events-none"
             style={{
@@ -269,7 +347,6 @@ export default function NoteEditor() {
             }}
           />
 
-          {/* Red Margin Line */}
           <div 
             className="absolute top-0 bottom-0 pointer-events-none"
             style={{
@@ -280,7 +357,6 @@ export default function NoteEditor() {
             }}
           />
 
-          {/* Text Area */}
           <div className="relative px-12 py-8">
             <textarea
               ref={textareaRef}

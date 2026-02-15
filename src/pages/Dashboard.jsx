@@ -1,59 +1,63 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Plus, Network, Brain, Link2, Clock, TrendingUp, FileText, Sparkles } from 'lucide-react';
+import { api } from '../services/api';
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [stats, setStats] = useState({
-    totalNotes: 127,
-    totalConnections: 342,
-    totalTopics: 18,
-    graphDensity: 94
+    totalNotes: 0,
+    totalConnections: 0,
+    totalTopics: 0,
+    graphDensity: 0
   });
+  const [recentNotes, setRecentNotes] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Mock data - replace with API calls
-  const recentNotes = [
-    { 
-      id: 1, 
-      title: 'API Gateway High Availability', 
-      tags: ['distributed-systems', 'architecture'], 
-      connections: 8, 
-      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
-      preview: 'Key concepts: active-active configuration, load balancing across multiple availability zones...'
-    },
-    { 
-      id: 2, 
-      title: 'React Performance Optimization', 
-      tags: ['frontend', 'react'], 
-      connections: 5, 
-      timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000),
-      preview: 'Memo, useMemo, useCallback - when to use each for optimal performance...'
-    },
-    { 
-      id: 3, 
-      title: 'PostgreSQL Indexing Strategies', 
-      tags: ['database', 'performance'], 
-      connections: 12, 
-      timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
-      preview: 'B-tree vs Hash vs GiST indexes and when to use each type...'
-    },
-    { 
-      id: 4, 
-      title: 'Vector Embeddings Explained', 
-      tags: ['ai', 'ml'], 
-      connections: 6, 
-      timestamp: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-      preview: 'How text is converted to numerical representations for semantic search...'
-    },
-  ];
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
 
-  const popularTags = [
-    { name: 'distributed-systems', count: 23, trend: 'up' },
-    { name: 'performance', count: 18, trend: 'up' },
-    { name: 'frontend', count: 15, trend: 'stable' },
-    { name: 'ai-ml', count: 12, trend: 'up' },
-  ];
+  const loadDashboardData = async () => {
+    try {
+      setIsLoading(true);
+      
+      // Load notes
+      const notesData = await api.getNotes();
+      
+      console.log('Loaded notes:', notesData);
+      
+      // Transform notes for display
+      const notes = notesData || [];
+      console.log('Transformed notes:', notes);
+      const transformedNotes = notes.slice(0, 4).map(note => ({
+        id: note.id,
+        title: note.title,
+        tags: note.metadata?.tags || [],
+        connections: 0, // We'll update this when we have graph data
+        timestamp: new Date(note.updated_at || note.created_at),
+        preview: note.preview
+      }));
+      console.log('Transformed recent notes:', transformedNotes);
+
+      
+      setRecentNotes(transformedNotes);
+      
+      // Update stats
+      setStats({
+        totalNotes: notes.length,
+        totalConnections: 0, // Will be updated when we fetch graph data
+        totalTopics: 0, // Will be calculated from tags
+        graphDensity: 0 // Will be calculated from connections
+      });
+      
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const formatTimestamp = (date) => {
     const now = new Date();
@@ -68,20 +72,25 @@ export default function Dashboard() {
     return date.toLocaleDateString();
   };
 
-  const handleSearch = (e) => {
+  const handleSearch = async (e) => {
     e.preventDefault();
-    // TODO: Implement search
-    console.log('Searching:', searchQuery);
+    if (!searchQuery.trim()) return;
+    
+    try {
+      const results = await api.searchNotes(searchQuery);
+      console.log('Search results:', results);
+      // TODO: Display search results in UI
+    } catch (error) {
+      console.error('Error searching:', error);
+    }
   };
 
   const handleNoteClick = (noteId) => {
-    // TODO: navigate(`/note/${noteId}`);
-    console.log('Opening note:', noteId);
+    navigate(`/editor?note=${noteId}`);
   };
 
   const handleNewNote = () => {
     navigate('/editor');
-    console.log('Creating new note');
   };
 
   const handleViewGraph = () => {
@@ -92,6 +101,14 @@ export default function Dashboard() {
   const handleTagClick = (tag) => {
     setSearchQuery(`#${tag}`);
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen bg-gradient-to-br from-stone-900 via-stone-800 to-neutral-900 items-center justify-center">
+        <div className="text-amber-400">Loading dashboard...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-stone-900 via-stone-800 to-neutral-900">
@@ -124,70 +141,58 @@ export default function Dashboard() {
               />
             </div>
           </form>
-          
-          {/* Popular Tags */}
-          <div className="mt-3 flex flex-wrap gap-2">
-            {popularTags.map(tag => (
-              <button
-                key={tag.name}
-                onClick={() => handleTagClick(tag.name)}
-                className="text-xs px-2 py-1 bg-amber-900/20 border border-amber-700/30 text-amber-300 rounded hover:bg-amber-900/30 transition-all flex items-center gap-1"
-              >
-                {tag.trend === 'up' && <TrendingUp size={10} />}
-                #{tag.name}
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Recent Notes List */}
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
           <h3 className="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-3">Recent Notes</h3>
-          {recentNotes.map(note => (
-            <div
-              key={note.id}
-              onClick={() => handleNoteClick(note.id)}
-              className="group p-3 rounded-lg cursor-pointer transition-all duration-200 bg-stone-800/30 border border-stone-700/30 hover:bg-amber-900/20 hover:border-amber-700/50"
-            >
-              <div className="flex items-start gap-2 mb-2">
-                <FileText className="w-4 h-4 text-amber-600/70 mt-0.5 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-medium text-amber-50 truncate">
-                    {note.title}
-                  </h3>
-                </div>
-              </div>
-              <p className="text-xs text-stone-400 line-clamp-2 mb-2">
-                {note.preview}
-              </p>
-              <div className="flex items-center gap-3 text-xs text-stone-500">
-                <div className="flex items-center gap-1">
-                  <Link2 size={10} className="text-amber-600" />
-                  <span>{note.connections}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Clock size={10} />
-                  <span>{formatTimestamp(note.timestamp)}</span>
-                </div>
-              </div>
-              {note.tags.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {note.tags.map(tag => (
-                    <span 
-                      key={tag} 
-                      className="text-xs px-1.5 py-0.5 bg-amber-900/20 text-amber-400 rounded"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleTagClick(tag);
-                      }}
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
+          {recentNotes.length === 0 ? (
+            <div className="text-center py-8 text-stone-500 text-sm">
+              No notes yet. Create your first note!
             </div>
-          ))}
+          ) : (
+            recentNotes.map(note => (
+              <div
+                key={note.id}
+                onClick={() => handleNoteClick(note.id)}
+                className="group p-3 rounded-lg cursor-pointer transition-all duration-200 bg-stone-800/30 border border-stone-700/30 hover:bg-amber-900/20 hover:border-amber-700/50"
+              >
+                <div className="flex items-start gap-2 mb-2">
+                  <FileText className="w-4 h-4 text-amber-600/70 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-medium text-amber-50 truncate">
+                      {note.title}
+                    </h3>
+                  </div>
+                </div>
+                <p className="text-xs text-stone-400 line-clamp-2 mb-2">
+                  {note.preview}
+                </p>
+                <div className="flex items-center gap-3 text-xs text-stone-500">
+                  <div className="flex items-center gap-1">
+                    <Clock size={10} />
+                    <span>{formatTimestamp(note.timestamp)}</span>
+                  </div>
+                </div>
+                {note.tags.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {note.tags.map(tag => (
+                      <span 
+                        key={tag} 
+                        className="text-xs px-1.5 py-0.5 bg-amber-900/20 text-amber-400 rounded"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleTagClick(tag);
+                        }}
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
         </div>
 
         {/* Action Buttons */}
