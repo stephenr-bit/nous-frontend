@@ -1,7 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
-// import NoteEditor from './pages/NoteEditor';
+import NoteEditor from './components/NoteEditor';
 // import GraphExplorer from './pages/GraphExplorer';
 // import NoteDetail from './pages/NoteDetail';
 
@@ -12,10 +12,12 @@ function App() {
         {/* Dashboard as home page */}
         <Route path="/" element={<Dashboard />} />
         
+        {/* Note Editor */}
+        <Route path="/editor" element={<NoteEditor />} />
+        <Route path="/editor/:id" element={<NoteEditor />} />
+        
         {/* Other routes - uncomment as you build them */}
         {/* <Route path="/note/:id" element={<NoteDetail />} /> */}
-        {/* <Route path="/editor" element={<NoteEditor />} /> */}
-        {/* <Route path="/editor/:id" element={<NoteEditor />} /> */}
         {/* <Route path="/graph" element={<GraphExplorer />} /> */}
         
         {/* Catch all - redirect to home */}
